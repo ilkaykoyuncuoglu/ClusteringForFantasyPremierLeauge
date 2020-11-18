@@ -1,0 +1,754 @@
+---
+title: "UNSUPERVISED STATISTICAL LEARNING - Clustering"
+author: "İlkay Koyuncuoglu"
+date: "4/24/2020"
+output:
+  pdf_document: 
+    fig_height: 3.5
+    fig_width: 4
+  html_document: default
+---
+
+###### Gerekli Kütüphaneler
+
+```{r, eval=FALSE, warning=FALSE, }
+library(corrplot) # for corelation visulation
+library(stats) 
+library(factoextra)
+library(cluster)
+library(dendextend)
+library(NbClust)
+library(clustertend)
+library(fpc)
+library(clValid)
+library("igraph")
+library(fossil)
+library(psych) #for kmo
+```
+
+##### - Veri seti tanıtımı
+
+ Fantasy Premier League (FPL) has 480 observations and 17 variables in the data for 2018-2019.
+  
+ The first column variable of these variables, namely the players are wanted to cluster. For this, we specify the first column as the row names.
+  
+ In order to analyze, the team and position variables must also be extracted. Correlation matrix, principal component analysis and cluster analysis cannot be performed in categorical data.
+  
+```{r message=FALSE, warning=FALSE}
+set.seed(123)
+fpl<- read.csv(file= "FPL.csv", header = TRUE, sep = ",", row.names  = 1)
+head(fpl)
+fpl_new <- fpl[-c(1,2)]
+head(fpl_new)
+str(fpl_new)
+dim(fpl_new)
+```
+  
+ Data set description;
+ 
+ - Name: Factor - Player Name.
+ 
+ - Team: Factor - Team Name (3 letter abbreviation) (To be removed)
+
+ - Position: Factor - Player Position (3 letter abbreviation) (DEF: Defense, FWD: Striker, MID: Midfielder)
+ 
+ - Cost: Average Cost of the Player
+
+ - Creativity: Evaluates player performance in terms of generating goal-scoring opportunities for others.
+
+ - Influence: Evaluates how much influence the player has had in a single match or throughout the season.
+
+ - Threat: A value that examines the targeted threat of a player. (Putting in a position that threatens the opponent's castle)
+
+ - Goals_conceded: Number of goals scored while the player was on the field
+
+ - Goals_scored: Goals scored by the player
+
+ - Assists: Player's Assists
+
+ - Own_goals: Own goals scored by the player
+
+ - Yellow_cards: Yellow cards received by the player
+
+ - Red_cards: Red cards received by the player.
+ 
+ - TSB: Percentage of teams from which the player was selected
+
+ - Minutes: Minutes played by the player
+
+ - Bonus: Bonus points received by the player
+
+ - points: the player's Point scores
+ 
+#### S1- Obtain and interpret descriptive statistics.
+ 
+ Example of averages in summary statistics;
+
+ Team variable: As it can be understood when looking at the bar plot, it conforms to a uniform distribution. In the Fantasy Premier League game, it is seen that almost equal numbers of players fall for each team.
+ 
+ Position variable: It can be observed that strikers are less than defenders and midfielders.
+ 
+ goals_scored variant: It is seen that each footballer scored approximately 6 goals on average.
+ 
+ own_goals variable: The average number of goals scored by the player in his own goal is 0. This result shows that there are extreme values in the data set, that is, there are a certain number of players who score their own goals.
+ 
+ Minutes variable: on average 3878 minutes, 3878/60 = 64.6 hours remaining on the field. There are also football players who never appeared on the field. There are also important players for the minute-on-pitch variable with a maximum value of 10192, more than twice the average.
+ 
+ Points variable: On average, the players who play the game receive 163.9 points thanks to the teams they set up and the players in them. It has a maximum value of 767 and there are extreme values.
+ 
+ Influence variable: the average score of being effective on the field is 894.4. Again, since there are many extreme values, the maximum value is a very far from average value such as 4033. There are also extreme value players who are active on the field.
+ 
+ It is seen that the variability in the variables is quite high and between different values.
+ 
+ These variance values will be effective in the methods we will use in cluster analysis and principal component analysis. There are no missing observations in our data set.
+
+```{r message=FALSE, warning=FALSE}
+summary(fpl)
+apply(fpl_new, 2, sd)
+sum(is.na(fpl))
+```
+ 
+ When looking at the box plots, it is seen that there are quite a lot of extreme values and variability. All variables except cost and minutes variables have skewed data sets.
+ 
+```{r message=FALSE, warning=FALSE}
+library(RColorBrewer)
+```
+ 
+ 
+```{r message=FALSE, warning=FALSE}
+boxplot(fpl_new, col=c("blue","red","yellow","pink","#ff9933","#ff9999","#ff99cc","#ffff99","#ff3333","#ff3399","#cc9933","#cc9999","#00cccc","#00ccff"),main="Fantasy Premier League Boxplot Grafiği",xlab="Değişkenler", ylab= "Aldıkları Değerler")
+boxplot(fpl_new[-c(2,3,4,12,14)],col=c("#ff9999","#ff99cc","#ffff99","#ff3333","#ff3399","#cc9933","#cc9999","#00cccc","#00ccff"),main="Fantasy Premier League Boxplot Grafiği",xlab="Değişkenler", ylab= "Aldıkları Değerler")
+```
+ 
+ Looking at histograms and bar plots, it is seen that the distributions of the notable variables are skewed.
+ 
+ Although the variable minutes is not seen as distorted, it seems to be suitable for a uniform distribution.
+ 
+ - Although the cost variable seems to be right-skewed, it can be concluded that it is normal when the normality test is performed.
+ 
+ - Right skewed interpretation can be made for the other four variables examined.
+ 
+ - The following can be said about these variables.
+ 
+ - We mentioned that the Teams variable can fit uniformly. As seen here, it conforms to uniform distribution.
+ 
+ We made the Teams and Position variables into tables for bar plots.
+ 
+```{r message=FALSE, warning=FALSE}
+position <- table(fpl$Position)
+team <- table(fpl$Team)
+```
+ 
+ When we look at the histograms, we get information about the distribution of the variable. There are also variables that have a skewed distribution and fit a two-peaked distribution.
+ 
+ It can be thought that there are many extreme values in skewed variables and that the players are in different positions in two-crested variables and should not be interpreted with these two-crested variables.
+ 
+```{r message=FALSE, warning=FALSE}
+hist(fpl_new$Assists,col="#ffcc00",main="FPL Assists Değişkeni Histogram Grafiği",xlab="Assists", ylab= "Frekanslar")
+hist(fpl$Minutes,col="#00cc00",main="FPL Minutes Değişkeni Histogram Grafiği",xlab="Minutes", ylab= "Frekanslar")
+hist(fpl$Cost,col="#cc9900",main="FPL Cost Değişkeni Histogram Grafiği",xlab="Cost", ylab= "Frekanslar")
+hist(fpl$Threat,col="#ff99cc",main="FPL Threat Değişkeni Histogram Grafiği",xlab="Threat", ylab= "Frekanslar")
+hist(fpl$points,col="#cccc33",main="FPL Points Değişkeni Histogram Grafiği",xlab="Points", ylab= "Frekanslar")
+hist(fpl$TSB,col="#339933",main="FPL TSB Değişkeni Histogram Grafiği",xlab="TSB", ylab= "Frekanslar")
+barplot(team,col="#cd853f",main="FPL Team Değişkeni Histogram Grafiği",xlab="Team", ylab= "Frekanslar")
+barplot(position,col="#8470ff",main="FPL Position Değişkeni Histogram Grafiği",xlab="Position", ylab= "Frekanslar")
+```
+ 
+ Looking at the colored correlation matrix, it is seen that all variables are related in the same direction.
+ 
+ - Influence variable and Treath, Goals_conceded, Minutes, Cost and points variables,
+ - Treath, cost and points variables with the Goals_conceded variable,
+ - points variable with bonus, minutes, Creativity, Influence and Treath variables
+ - Treath and cost variables with goals_scored
+ - Assist and creavitiy variables
+ 
+ It is seen that they have a high level positive relationship.
+ 
+ With the pairs function, those specified in the visualized correlation are supported.
+```{r message=FALSE, warning=FALSE}
+require("corrplot")
+require(graphics)
+library(RColorBrewer)
+corrplot.mixed(cor(fpl_new))
+pairs(fpl)
+```
+ 
+ In this case;
+ 
+ The more effective players stay on the field, the higher the price and the more points the player gets.
+ 
+ As the number of goals increases, the threat and price of the opposing team field increases.
+ 
+ As the score of the player increases, the bonus points, the minutes of the player he plays, and the threat of the player against the goal increases.
+ 
+ The Creativity variable is the number of goal creation, including assists. In this case, it should be seen that there is a high correlation as in the analysis. In other words, as the number of assists increases, the number of creavity should increase and increases.
+ 
+ 
+#### S2- Comment by applying principal component analysis.
+
+ The eigenvalues and eigenvectors of the covariance matrix or the correlation matrix are used to find the linear components of the p variable in the data matrix.
+ 
+ If the variables are in the same unit or comparable units, the variance-covariance matrix with the same size of variable variances is used.
+ 
+ When these conditions are not provided, the correlation matrix is used instead of the variance-covariance matrix.
+
+ Principal Component Analysis has three main purposes:
+ 
+ 1. Reducing the size of the data,
+ 2. Making predictions,
+ 3. Viewing the data set for some analysts.
+ 
+ When we apply Principal Component Analysis, the actual size of this p-dimensional space is determined at the end of the process. This actual dimension is called elementary components.
+ 
+ Basic ingredients have three properties:
+ 
+ 1. They are not correlated.
+ 2. The first fundamental component is the variable that most explains the total variability.
+ 3. The next fundamental component is the variable that most explains the remaining variability.
+  
+ The stat.desc command provides more detailed information for principal component analysis (TBA). Since the variation on the data and between variables is quite high, it would be more accurate to do the analysis on the correlation matrix.
+
+ The first step in determining whether the data set is suitable for new variable analysis is to examine the correlation coefficients between variables. The desired correlation between variables is high. Because the higher the correlations between variables, the more likely the variables to create new common variables. (1)
+ 
+ In other words, the presence of high correlations between variables indicates that variables are measures of common new variables in different ways. The presence of low correlations between variables indicates that the variables will not form new common variables. (1)
+ 
+ When the variance values are examined, it is seen that the changes of the variables are quite high from each other. This situation leads to the analysis with the correlation matrix for principal component analysis.
+ 
+```{r message=FALSE, warning=FALSE}
+apply(fpl_new,2, var)
+```
+ 
+ When the correlation matrix is examined, it is seen that the correlations are quite high. In this case, it is useful to be sure by calculating the Kaiser, Meyer, Olkin measurement.
+ 
+ When we look at the kmo criterion of the correlation matrix of the data set, it is seen that 0.8> 0.5. This criterion states that the data set is suitable for principal component analysis.
+
+```{r message=FALSE, warning=FALSE}
+require("psych")
+corr=cor(fpl_new, method = "pearson")
+KMO(corr)
+```
+ 
+  Eigenvalues and eigenvectors are found using the correlation matrix. The eigenvalues found will be used to determine the number of new variables to be selected.
+  
+```{r message=FALSE, warning=FALSE}
+fpl.pca <- prcomp(fpl_new, center = TRUE, scale. = TRUE)
+fpl.pca$rotation[,1:4]
+```
+ 
+  Eigenvalues are equal to the square of standard deviations.
+  
+```{r message=FALSE, warning=FALSE}
+fpl.pca$sdev^2
+```
+
+  Scaled new observation values calculated for each new component;
+  
+```{r message=FALSE, warning=FALSE}
+fpl.pca$x[1:15,1:6]
+```
+ 
+ a. Scree Plot
+ 
+ Looking at the scree plot, the number of components up to the first point where the break is flattened can be determined as the main component. By looking at the scree plot method, all 3 components can be decided.
+
+```{r message=FALSE, warning=FALSE}
+require(factoextra)
+fviz_eig(fpl.pca, barfill = "#ff6a6a", barcolor = "red", linecolor = "#800000")
+```
+ 
+ b. Description Percentage
+ 
+ In the summary statistics of the data set for which principal component analysis has been performed, there are eigenvalues, how much explanatory percentage each eigenvalue has, and the cumulative state of the explanatory percentages.
+ 
+ - The first main component explains 53.28%, the second main component explains 66.84% and the third main component explains 75.49%. In this case, if we set 75% as the limit, 3 basic components can be selected according to this method. The fourth major component explains 83.09%. If the 80% limit is set, it can be decided on 4 basic components.
+ 
+```{r message=FALSE, warning=FALSE}
+summary(fpl.pca)
+```
+ 
+ c. Eigenvalues Are Greater Than 1
+ 
+ The first eigenvalue is 2.52, the second eigenvalue is 1.27, and the third eigenvalue is 1.01. The fourth is 0.95, in this case it is appropriate to choose the first three components.
+ 
+```{r message=FALSE, warning=FALSE}
+fpl.pca$sdev^2
+```
+
+ The appropriate decision for all 3 methods is to choose 3 basic components.
+ 
+ * Interpreting basic components
+ 
+```{r message=FALSE, warning=FALSE}
+fpl.pca$rotation[,c(1,2,3)]
+```
+ 
+ The first three components have been selected.
+ 
+ In this case;
+ 
+ For PC1: Influence, Threat, goals_scored, Minutes, Bonus and Points will be decided by the variables.
+ 
+ For PC2: will be decided by goals_conceded and yellow cards.
+ 
+ For PC3: it will be decided by the variable own_goals and red_cards.
+ 
+ * Visualization
+  
+  When looking at the image, the players named Hazard, Aguero and Salah are in the opposite direction compared to the others.
+
+ These situations show us that the data in the data set are almost the same. The players separated by the variables are 3 people. If we want to push the situation, Kane, Alonso, Mare, Wilson and Sterling can be added to these players. But footballers are so similar that they are not positioned far from each other.
+ 
+ ** Alonso, Trippier, Rpbertson and Mendy as defender; Salah, Hazard, Starling, Mane and DavidSilva as midfielder; Explaining Aguero, Kane, Firmino, Aubameyang, Lacazette, Lakuka and Wilson Dim2 as a forward, the player is in high value in terms of the number of goals scored and yellow card variables when he is on the field. These footballers are different from other defenders in terms of these variables.
+ 
+ It is observed that they have small values in terms of Dim1, which is explained by the variables of the activity, the number of goals scored, the number of movements threatening the opposing goal, the minutes left on the field, bonus points, and the points that the player has earned. These players have more yellow cards and more goals when they are on the field. But their activities, the points they earn to the person playing the game, the goal he scored and the minute he is on the field are less.
+ 
+ ** Defender Hoedt, Yedlin, Schindler, Zanka, Dunk, Zabaleta and Kongolo; Midfielder Cork, Shephens, Capoue and Gueye are Dim1, the number of goals scored, the number of moves threatening the opposing goal, the number of minutes left on the field, bonus points, and the point scores given to the player who played the game are not good but not interpreted badly. When the player with Fkata Dim2 is on the field, they are very bad in terms of the number of goals scored and the yellow card variables.
+ 
+ In this case, they are better footballers in terms of points, bonus points, goals scored and minutes left on the field.
+ 
+ ** Holebas and Maquire defender; Doucoure and Xhaka, who are midfielder, are both bad footballers in terms of lining.
+ 
+ In this case, their activities are bad football players in terms of the variables of points they earn to the player playing the game, the goal they score, the minute they stay on the field and the number of goals scored while on the field.
+ 
+ ** Other players are located very close to 0 in the coordinate axis.
+
+ This situation can be interpreted as follows; the variables selected are not correct variables, ie variables that do not represent the situation to be explained may have been taken for analysis. Or, the number of variables selected may not be sufficient.
+ 
+```{r message=FALSE, warning=FALSE}
+require(factoextra)
+fviz_pca_biplot(fpl.pca, repel = TRUE,
+                col.var = "#90caf9", # Variables color
+                col.ind = "#ffcc33",  # Individuals color
+                labelsize=2, 
+                habillage=fpl$Position
+)
+fviz_pca_biplot(fpl.pca, repel = TRUE,
+                col.var = "#90caf9", # Variables color
+                col.ind = "#ffcc33",  # Individuals color
+                labelsize=2, 
+                habillage=fpl$Team
+)
+```
+
+
+#### S3- Explain which method you chose in clustering analysis and how many clusters you determined with your justifications. Comment on the results you have obtained.
+
+ Cluster analysis tries to form homogeneous groups by using some measures whose units are calculated based on similarity or distances between variables (Özdamar, 2004: 279).
+ 
+  Euclidean distance is the most commonly used distance measure to calculate distances between individuals or objects in cluster analysis. (Ünlükaplan, 2008: 21)
+  
+ It is based on similarities or differences between variables. In the analysis, the distances of the variables of a unit from each other are calculated. In short, distance or similarity matrix is used. Similarities are the measure of the distance between object pairs. (2)
+ 
+ In the case of quantitative clustering as similarity or distance measurements, euclid, manhattan, minkovski etc. dimensions are used. In case of qualitative clustering, methods such as correlation distance measure and pearson are used. But since our data set is a mixed data set, the gower metric of the daisy command will be used.
+ 
+ daisy: Calculates all pair differences (distances) between observations in the data set. The generalized Gower formula is used when the original variables are of mixed types or when metric = "gower".
+ 
+  * Looking at the distance matrix; There are 8 observations that have a distance greater than 0.62. Some of those; Aquero-Jaqielka, Salah, and Halford-Jaqielka-StevenSesseyman-Medley.
+  
+ Since there is a lot of distance above 0.6 in the matrix, not all can be specified. However, players like Salah, Aquero, and Hazard are very discrete and distant from the players who are around the center in terms of variables. In fact, there are many football players gathered around the center that cannot be specified. Therefore, it may be appropriate to interpret as stated in Principal components analysis.
+ 
+```{r message=FALSE, warning=FALSE}
+require(cluster)
+fpl_gower_dist=daisy(fpl, metric="gower")
+(r <- sum(round(as.matrix(fpl_gower_dist), 3) > 0.62))
+round(as.matrix(fpl_gower_dist)[1:8,1:8], 3)
+```
+ 
+ Looking at the graph below, there is no clustering. Except for a certain number of players, no player is distinguished from each other in terms of any characteristics / variables.
+ 
+ This situation indicates that no tangible result can be obtained in clustering operations.
+ 
+```{r message=FALSE, warning=FALSE}
+fviz_dist(fpl_gower_dist,show_labels = F)
+```
+
+ 1- Clustering methods
+ 
+ Cluster analysis, which is a guiding research method in summarizing and defining data in multidimensional space; It is known as a method that allows grouping observations in different groups that are relatively heterogeneous or observations in similar groups that are relatively homogeneous by appropriate methods. (6)
+ 
+ The assumptions of normality, linearity and homogeneity, which have an important place in other multivariate statistical methods, remain in principle in this method and the normality of distance values is considered sufficient. (6)
+ 
+ Clustering analysis aims at clustering between observations, classification between variables or classification of observations and variables together. It is divided into hierarchical and non-hierarchical clustering methods.
+ 
+ Some of the methods we will use are k-mean, k-medoids and CLARA methods, which are non-hierarchical clustering methods. Among the hierarchical clustering methods ward.D2, avarage linkage, single linkage, complete linkage methods.
+ 
+ 2- Is there a clustering tendency?
+ 
+ Considering the descriptive statistics in the data set (see S1), one of the max-min, z-score and decimal normalization types should be selected for the data set due to the high variability as seen in the boxplot graph analysis.
+  
+  The z-score normalization method will be applied to the data set here. This process converts the values in the data set to 0 mean and 1 variance. Variability has disappeared.
+  
+ It starts with standardizing the data set. There is a lot of variability in the data set, it should be eliminated.
+ 
+```{r message=FALSE, warning=FALSE}
+fpl_new <-scale(fpl_new,center = TRUE, scale = TRUE)
+head(fpl_new,5)
+```
+ 
+ As can be seen, the data set is standardized. Although the standardization process was applied, the normalization process narrowed the box width of the variables because the extreme values in the data set were too many and they took large values, but it could not prevent the skewness.
+ 
+```{r message=FALSE, warning=FALSE}
+boxplot(fpl_new)
+```
+ 
+ - Hopkins Statistics;
+ 
+ Evaluates the clustering tendency of the data set by measuring the probability of producing data from a uniform distribution.
+ 
+ fpl_new = D = new data
+ 
+ ${H_0}$ = fpl_new conforms to uniform distribution
+ 
+ ${H_1}$ = fpl_new not conforms to uniform distribution
+ 
+
+```{r message=FALSE, warning=FALSE}
+require(clustertend)
+set.seed(123)
+h_fpl_new=hopkins(fpl_new, nrow(fpl_new)-1)
+h_fpl_new
+```
+ 
+ According to the result, when the value is very close to 0, it can be said that it is suitable for clustering. The threshold value 0.5 is used.
+ 
+ If the Hopkins statistics value is close to zero, one can reject the null hypothesis and conclude that dataset D is a significantly clusterable data.
+ 
+ - VAT Statistics;
+ 
+ Visual Evaluation of Clustering Trend.
+ 
+ It is lined up with similar objects in clusters. An ordered difference matrix is created. This matrix is displayed as an ordered variance / dissimilarity display that is a visual output of VAT.
+ 
+ There is no clustering. In this case, when performing cluster analysis, it is not possible to have a preliminary information about how many clusters will be made.
+ 
+```{r message=FALSE, warning=FALSE}
+fviz_dist(dist(fpl_new), show_labels = FALSE)+ 
+  labs(title = "Fpl Data")
+```
+ 
+ 3- Choosing the Best Cluster Algorithm
+ 
+ The clValid command is used to measure which clustering method gives better results based on non-hierarchical and hierarchical clustering methods.
+ 
+ In the internal result, the optimum situation is that the value of the silhouette method is close to 1, the dunn index is large and the connection value is close to 0.
+ 
+ Looking at the results;
+ 
+ Hierarchical method and 2 clusters with a value of 0.6575 for the silhouette method,
+ Hierarchical method with a value of 0.2809 for dunn index and 2 sets,
+ For the connection value, the hierarchical method and 2 cluster decisions can be made with a value of 6.2282, which is the closest to 0.
+ 
+ Looking at the Optimal Results, it is suggested to apply hierarchical methods with 2 sets.
+ 
+```{r message=FALSE, warning=FALSE}
+require(clValid)
+set.seed(123)
+fpl_new <- scale(fpl_new,center = TRUE  ,scale = TRUE)
+clmethods <- c("kmeans","pam","hierarchical","clara")
+intern <- clValid(fpl_new, nClust = 2:6,
+                  clMethods = clmethods, validation = "internal")
+summary(intern)
+```
+ 
+ The fact that the AD / APN / ADM / FOM values obtained by looking at the results of the static measurements are close to 0 leads to the optimum result.
+ 
+ Looking at the results;
+ 
+ 5 clusters in hierarchical methods with 0.0033 value for APN value,
+ 6 clusters in pam methods with a value of 1.4924 for AD value,
+ 2 clusters in pam methods with 0.0161 value for ADM value,
+ With a value of 0.5957 for the FOM value, 5 clusters can be seen as optimum in pam methods.
+ 
+ The optimal result suggested to us is;
+ 
+ Hierarchical methods and 5 sets for APN; AD pam algorithm and 6 clusters; ADM is pam algorithm and 2 clusters and pam algorithm for FOM and 5 clusters.
+ 
+```{r message=FALSE, warning=FALSE}
+set.seed(123)
+stab <- clValid(fpl_new, nClust = 2:6, clMethods = clmethods,
+                validation = "stability")
+summary(stab)
+```
+ 
+ Since each value contains different results, it must be continued by considering the internal results.
+  
+  As a result of this situation, considering both methods, hierarchical methods and pam algorithm are proposed. 2 and 5 sets are suggested for hierarchical methods, 2.5 and 6 sets are suggested for pam algorithm.
+  
+ After determining the optimal number of clusters, the decision about the method to be made will be stated.
+ 
+ 4- Determining the Optimal Number of Clusters
+ 
+ Determining the optimum number of clusters in a dataset is a fundamental problem in partitioning clustering, such as k-mean clustering, which requires the user to specify the number of clusters to cluster.
+ 
+ Unfortunately, there is no definitive answer to this question. The optimal number of clusters is somewhat subjective and depends on the method used to measure similarities and the parameters used for segmentation.
+ 
+ A simple and popular solution consists in examining the dendrogram generated using hierarchical clustering to see that it does not suggest a certain number of clusters. Unfortunately, this approach is subjective.
+
+ 1. Direct methods: consists of optimizing a metric such as the sum of squares or the average silhouette within the cluster. The corresponding methods are called elbow and silhouette methods, respectively.
+ 
+2. Statistical test methods: It consists of comparing the evidence against the $ {H_0} $ hypothesis. An example of this is GAP statistics.
+
+ - Elbow Method
+ 
+ We want the total WSS to be as small as possible for the compactness of the cluster. The number of clusters in which the total WSS is the smallest should be selected and qualified as the best. It does not always give exact results.
+ 
+ - Average silhouette Method
+ 
+ In short, it measures the quality of a cluster. That is, it determines how well each object is in its set. A high mean silhouette width indicates good clustering.
+ 
+ - GAP Statistics
+ 
+ The approach can be applied to any clustering method.
+ The estimate of the optimal clusters will be the value that gives the largest GAP statistic value. This means that the clustering structure is far from the random uniform distribution of points.
+ 
+ In addition to Elbow, silhouette, and GAP statistics methods, there are more than thirty published indexes and methods to define the optimal number of clusters. In order to decide, the best cluster number will be determined by calculating all 30 indices and applying the "majority rule".
+ 
+ In this case, the hierarchical method and 3 clusters suggested by 11 indexes were decided instead of 5 clusters.
+ In hierarchical methods, the average or ward.D2 method should be used, which gives the best result.
+
+
+#### S4- Make detailed comments for the clusters you determined in the final.
+
+ Hierarchical methods are methods used mostly for small data sets. There are 5 methods as Single linkage, complete linkage, Average linkage Centroid link and Ward minimum variance method.
+ 
+ In partitioned methods, there is a pam algorithm that is resistant to kmeans and extreme values.
+ 
+ The data set should be standardized and drawn to a certain range.
+ 
+```{r message=FALSE, warning=FALSE}
+fpl_new <- scale(fpl_new,center = TRUE  ,scale = TRUE)
+boxplot(fpl_new)
+```
+ 
+Since the data set has an extreme value, the Manhattan distance criterion will be used. It turned out better than Euclid with a slight difference.
+ Manhattan City Block distance is a measure of distance that is less sensitive to outliers (Timm, 2002, p.517) (5).
+ 
+```{r message=FALSE, warning=FALSE}
+dist_m_fpl=get_dist(fpl_new, stand = TRUE, method="manhattan")
+dist_e_fpl=get_dist(fpl_new, stand = TRUE, method="euclidean")
+```
+ 
+There are more than thirty published indexes and methods to define the optimal number of clusters. These 30 indices can be looked at to decide the best number of clusters using the "majority rule".
+ 
+ When * ward.D2 method and manhattan distance criteria are used, it is seen that 9 indices suggest 2 and 3 clusters.
+ 
+```{r message=FALSE, warning=FALSE}
+require(NbClust)
+set.seed(123)
+nbclust_fpl_ward <- NbClust(fpl_new, distance = "manhattan", min.nc = 2,
+              max.nc = 9, method = "ward.D2")
+head(nbclust_fpl_ward$All.index,4)
+nbclust_fpl_ward$Best.nc
+fviz_nbclust(nbclust_fpl_ward)
+```
+
+* When using the pam algorithm and manhattan distance criteria, it is seen that 9 indices suggest 2 and 3 clusters, just like the ward.D2 method.
+
+```{r message=FALSE, warning=FALSE}
+require(NbClust)
+set.seed(123)
+nbclust_fpl_kmeans <- NbClust(fpl_new, distance = "manhattan", min.nc = 2,
+              max.nc = 9, method = "kmeans")
+head(nbclust_fpl_ward$All.index,4)
+nbclust_fpl_ward$Best.nc
+fviz_nbclust(nbclust_fpl_ward)
+```
+
+* When the Average method is applied, it is seen that 15 indices suggest 3 clusters for clustering.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(123)
+nbclust_fpl_average <- NbClust(fpl_new, distance = "manhattan", min.nc = 2,
+              max.nc = 9, method = "average")
+head(nbclust_fpl_average$All.index,4)
+nbclust_fpl_average$Best.nc
+(fviz_nbclust(nbclust_fpl_average))
+```
+ 
+  Since the data set consists of data close to each other, almost a single cluster, 5 clusters can cause overlap problem. So there should be no clusters of 5 or more.
+ 
+ As a result, a definite selection cannot be made since the number of clusters is made subjective. The clearest solution is to try combinations of suggested methods and number of clusters.
+ 
+ - In hierarchical methods, 3 cluster analysis will be performed using ward.D2 and average method.
+ 
+ - Segmentation, non-hierarchical, clustering methods will be analyzed with pam algorithm and 3 clusters.
+ 
+ - In terms of making comparisons and seeing the difference, as an example, 2 cluster analysis will be made with the pam algorithm.
+ 
+ a- Hierarchical Methods
+ 
+ It is cluster analysis performed by consecutive combining and division of observations or clusters (6). The method (AGNES), which assumes all observations as a separate cluster and combines them into a larger cluster (AGNES), and the method (DIANA), which ultimately results in a single cluster of each observation by gradually sub-clustering all observations into a single cluster.
+ 
+ a1-ward.D2 method;
+ 
+```{r message=FALSE, warning=FALSE}
+hc_m_fpl_w=hclust(d=dist_m_fpl, method="ward.D2")
+plot(hc_m_fpl_w)
+dend_w <- as.dendrogram(hc_m_fpl_w)
+```
+ 
+It calculates the height of the branches based on the distances and therefore the correlations. If its cogenetic value is higher than 0.75, it shows that it reflects the data set better. The higher the value, the better the data set is reflected.
+ 
+ Here, it has a value of 0.48, that is, it is seen that it reflects the data set not well or even badly.
+ 
+```{r message=FALSE, warning=FALSE}
+coph_m_fpl_w=cophenetic(hc_m_fpl_w)
+cor(dist_m_fpl,coph_m_fpl_w)
+```
+ 
+ Considering the grouping process 2-3. The number of data per groups is approximate, but cluster 1 is reserved.
+ 
+```{r message=FALSE, warning=FALSE}
+grup_fpl_w=cutree(hc_m_fpl_w, k=3)
+table(grup_fpl_w)
+```
+ 
+ Visualization of which observations in which group in the data set;
+ 
+```{r message=FALSE, warning=FALSE}
+fviz_dend(hc_m_fpl_w, k = 3, # Cut in four groups
+          cex = 0.5, # label size
+          k_colors = c("#2E9FDF", "#00AFBB", "#FC4E07"),
+          color_labels_by_k = TRUE, # color labels by groups
+          rect = TRUE # Add rectangle around groups
+)
+```
+ 
+ a2- Average Method;
+ 
+```{r message=FALSE, warning=FALSE}
+hc_m_fpl_a=hclust(d=dist_m_fpl, method="average")
+plot(hc_m_fpl_a)
+dend_a <- as.dendrogram(hc_m_fpl_a)
+```
+ 
+ Here, it has a value of 0.868, that is, it is seen that it reflects the data set well.
+ 
+```{r message=FALSE, warning=FALSE}
+coph_m_fpl_a=cophenetic(hc_m_fpl_a)
+cor(dist_m_fpl,coph_m_fpl_a)
+```
+ 
+ Considering the grouping process 2-3. The number of data per groups is approximate, but cluster 1 is reserved.
+ 
+```{r message=FALSE, warning=FALSE}
+grup_fpl_a=cutree(hc_m_fpl_a, k=3)
+table(grup_fpl_a)
+```
+ 
+ Visualization of which observations in which group in the data set;
+ 
+```{r message=FALSE, warning=FALSE}
+fviz_dend(hc_m_fpl_a, k = 3, # Cut in four groups
+          cex = 0.5, # label size
+          k_colors = c("#2E9FDF", "#00AFBB", "#FC4E07"),
+          color_labels_by_k = TRUE, # color labels by groups
+          rect = TRUE # Add rectangle around groups
+)
+```
+ 
+ a3-ward.D2 and Average method dendogram comparison;
+ 
+ Looking at the tenglengram, it is seen that the ward.D2 and average methods give similar results. Entanglement value is 0. 
+ 
+ It can be said that the closer they are to 0, the more similar methods they are.
+
+```{r message=FALSE, warning=FALSE}
+require(dendextend)
+dend_list_aw=dendlist(dend_a,dend_w)
+tanglegram(dend_a,dend_w,
+           highlight_distinct_edges = FALSE, # Turn-off dashed lines
+           common_subtrees_color_lines = FALSE, # Turn-off line colors
+           common_subtrees_color_branches = TRUE, # Color common branches
+           main = paste("entanglement =", round(entanglement(dend_list_aw), 2)))
+cors <- cor.dendlist(dend_list_aw)
+cors
+```
+ 
+ b- Partitioned Methods
+ 
+ b1- kmedoid 3 cluster;
+ 
+ It is aimed to separate n observations into k clusters that were decided before, so that the clusters are the most homogeneous. Distance measures should be used to implement the algorithm. Since the number of sets is variable, it is difficult to choose the best method in itself.
+ 
+ When 3 clusters are selected for the pam algorithm, it is seen that the clusters are intertwined. Some of the observations were in cluster 2, while they were in cluster 1. The existence of the third cluster caused the clusters to be seen more internally.
+ 
+ According to this method, optimum k is determined as 2. As seen in the graph, the method has chosen the highest average silhouette width.
+ 
+```{r message=FALSE, warning=FALSE}
+fviz_nbclust(fpl_new, pam, method="silhouette")
+```
+ 
+ However, taking into account the previous suggestions, it will be tested with 3 clusters and then 2 clusters will be made.
+ 
+```{r message=FALSE, warning=FALSE}
+pam_fpl_3=pam(fpl_new,3)
+fviz_cluster(pam_fpl_3,
+             labelsize = 6,
+             ellipse.type = "t", # Concentration ellipse
+             repel = FALSE, # Avoid label overplotting (slow)
+             ggtheme = theme_classic())
+
+pam_table_3 <- table(pam_fpl_3$clustering)
+pam_table_3
+barplot(pam_table_3,ylim =c(0,200),
+        col=c("#ccff99","#ee3399","#9999ee")) %>%
+          text(pam_table_3+6,labels=pam_table_3)
+```
+ 
+ b2- kmedoid 2 cluster;
+ 
+```{r message=FALSE, warning=FALSE}
+pam_fpl_2 <- eclust(fpl_new, "pam", k = 2, graph = TRUE)
+```
+ 
+ Here, there is a tabular version of the original data set. How many variables fall into which cluster can be observed.
+ 
+```{r message=FALSE, warning=FALSE}
+pam_table_2 <- table(pam_fpl_2$clustering)
+pam_table_2
+
+barplot(pam_table_2,ylim =c(0,270),
+        col=c("#f4a460","#8b6914","#ff6a6a"),) %>% 
+          text(pam_table_2+6,labels=pam_table_2)
+```
+ 
+ In the comparison of the tables, the data in the 3rd cluster are distributed approximately halfway to the 1st and 2nd clusters. Most of the players positioned around the origin moved to cluster 1 and cluster 3 was transferred to cluster 2.
+ 
+```{r message=FALSE, warning=FALSE}
+t <- rbind(pam_table_2,pam_table_3)
+t[1,3] <- NA
+t
+```
+ 
+ There are no big differences between kmedoids and hierarchical methods in terms of 3 sets. Therefore, it is very difficult to choose the best one as there is no feature to distinguish it from each other. If two clusters of kmedoids are selected, it can be said that it is better than other tried methods.
+ 
+ In the 3-cluster methods, since the first cluster includes the players with extreme values, the distances to them also group all the players around 0 and put them into the second and third clusters. Because of this situation, cluster 1 remains detached. How extreme values affect the data set can be clearly seen in the graphs.
+ 
+ In the method with 2 sets, the 1st cluster also separated itself by being affected by extreme values.
+ 
+#### RESULT
+
+ As a result;
+ 
+ By looking at the descriptive statistics, it is clear that there will be problems in any analysis to be made to the data set, since the variability of the data set, the units of the variables are different and the extreme values are quite high for each variable. He transformed the data set of extreme values in the data sets into a skewed and highly variable data set.
+ 
+ The principal component analysis was tested with KMO and only the variables explaining the 2nd and 3rd main components could be clearly determined. The 1st fundamental component is explained by quite a lot of variables.
+ 
+ For cluster analysis, suitability is tested first. As a result of this test, it is concluded that it is suitable for clustering. As a result of the analysis, 2 and 3 cluster samples were made in hierarchical and pam methods. The extreme values are positioned so many and the data set so close to the center that the clusters appear to be intertwined with each other.
+ 
+ In this direction, the data set should be tested with different types of clustering methods, not with the determined clustering methods.
+ 
+ The data set is about the characteristics of the players and includes the points and bonus points earned by the person playing the game. In this case, the correlations are high with these variables. By looking at this correlation and depending on the general topic of the data, analysis can be made by taking the poinst variable as the dependent variable and using one of the supervised statistical learning methods.
+ 
+### REFERENCES
+
+ 1. WEB1 https://prezi.com/vb1nauiibaej/faktoring-analyze/
+ 2. Altun Ada, Dumlupınar University, Journal of Social Sciences, April (2011), number:29, s.322
+ 3. H. Coşkun Çelik, Ömer Satıcı, M. Yusuf Çelik, "Sağlık Personellerinde Kronik Sigara İçme Alışkanlığı Olanların Tutumlarına İlişkin Değişkenlerin Kümeleme Analizi (Cluster Analysis)", 
+Dicle Medical Journal, 2005 volume:32, number:1, s.20-25
+ 4. Mustafa Şen YILDIZ, Bedri KEKEZOĞLU, Evren İŞEN, "DETERMINATION OF MAINTENANCE STRATEGY FOR POWER TRANSFORMERS WITH K-MEANS CLUSTERING METHOD", 2019, Journal of Engineering Sciences and Design
+7(3), s.505 – 513
+ 5. Timm, N. H. (2002). Applied Multivariate Analysis. New York: Splinger- Verlag.
+ 6. Wierzchoń, S. T. ve M. A. Klopotek. (2018). Modern Algorithms of Cluster Analysis. Cham: Springer
+ 
